@@ -2,6 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from database import cursor, connection
 from schemas.education_schema import Education, UpdateEducation
 from auth import verify_token, get_current_user
+from services.education_service import (
+    create_education_record,
+    get_all_education,
+    get_education_by_id,
+    replace_education,
+    patch_education_record,
+    delete_education_record
+)
+
+from utils.education_mapper import education_to_dict
 
 router = APIRouter(
     prefix="/education",
@@ -14,37 +24,15 @@ router = APIRouter(
 def create_education(
         education: Education,
         current_user=Depends(get_current_user)):
-
-    user_id = current_user[0]
-
-    query = """
-    INSERT INTO education
-    (
-        user_id,
-        degree,
-        college_name,
-        specialization,
-        passing_year,
-        percentage
+    
+    education_id = create_education_record(
+        current_user[0],
+        education
     )
-    VALUES (%s,%s,%s,%s,%s,%s)
-    """
-
-    values = (
-        user_id,
-        education.degree,
-        education.college_name,
-        education.specialization,
-        education.passing_year,
-        education.percentage
-    )
-
-    cursor.execute(query, values)
-    connection.commit()
 
     return {
         "message": "Education added successfully",
-        "education_id": cursor.lastrowid
+        "education_id": education_id
     }
 
 
@@ -53,31 +41,13 @@ def create_education(
 def get_my_education(
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    query = """
-    SELECT *
-    FROM education
-    WHERE user_id=%s
-    """
-
-    cursor.execute(query, (user_id,))
-    records = cursor.fetchall()
-
-    result = []
-
-    for row in records:
-        result.append({
-            "edu_id": row[0],
-            "user_id": row[1],
-            "degree": row[2],
-            "college_name": row[3],
-            "specialization": row[4],
-            "passing_year": row[5],
-            "percentage": row[6]
-        })
-
-    return result
+    records = get_all_education(
+        current_user[0]
+    )
+    return [
+        education_to_dict(row)
+        for row in records
+    ]
 
 
 
@@ -86,35 +56,11 @@ def get_education(
         edu_id: int,
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    query = """
-    SELECT *
-    FROM education
-    WHERE edu_id=%s
-    AND user_id=%s
-    """
-
-    cursor.execute(query, (edu_id, user_id))
-
-    row = cursor.fetchone()
-
-    if not row:
-        raise HTTPException(
-            status_code=404,
-            detail="Education record not found"
-        )
-
-    return {
-        "edu_id": row[0],
-        "user_id": row[1],
-        "degree": row[2],
-        "college_name": row[3],
-        "specialization": row[4],
-        "passing_year": row[5],
-        "percentage": row[6]
-    }
-
+    row = get_education_by_id(
+        edu_id,
+        current_user[0]
+    )
+    return education_to_dict(row)
 
 @router.put("/{edu_id}")
 def update_education(
@@ -122,120 +68,45 @@ def update_education(
         education: Education,
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    cursor.execute(
-        """
-        SELECT *
-        FROM education
-        WHERE edu_id=%s
-        AND user_id=%s
-        """,
-        (edu_id, user_id)
+    get_education_by_id(
+        edu_id,
+        current_user[0]
     )
-
-    record = cursor.fetchone()
-
-    if not record:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized"
-        )
-
-    query = """
-    UPDATE education
-    SET
-        degree=%s,
-        college_name=%s,
-        specialization=%s,
-        passing_year=%s,
-        percentage=%s
-    WHERE edu_id=%s
-    """
-
-    values = (
-        education.degree,
-        education.college_name,
-        education.specialization,
-        education.passing_year,
-        education.percentage,
-        edu_id
+    replace_education(
+        edu_id,
+        education
     )
-
-    cursor.execute(query, values)
-    connection.commit()
-
     return {
         "message": "Education updated successfully"
     }
-
-
+    
+    
 @router.patch("/{edu_id}")
 def patch_education(
         edu_id: int,
         education: UpdateEducation,
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    cursor.execute(
-        """
-        SELECT *
-        FROM education
-        WHERE edu_id=%s
-        AND user_id=%s
-        """,
-        (edu_id, user_id)
+    get_education_by_id(
+        edu_id,
+        current_user[0]
     )
 
-    record = cursor.fetchone()
-
-    if not record:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized"
-        )
-
-    query = "UPDATE education SET "
-    values = []
-
-    if education.degree is not None:
-        query += "degree=%s,"
-        values.append(education.degree)
-
-    if education.college_name is not None:
-        query += "college_name=%s,"
-        values.append(education.college_name)
-
-    if education.specialization is not None:
-        query += "specialization=%s,"
-        values.append(education.specialization)
-
-    if education.passing_year is not None:
-        query += "passing_year=%s,"
-        values.append(education.passing_year)
-
-    if education.percentage is not None:
-        query += "percentage=%s,"
-        values.append(education.percentage)
-
-    if len(values) == 0:
+    data = education.model_dump(
+        exclude_none=True
+    )
+    
+    if not data:
         return {
             "message": "No fields provided"
         }
-
-    query = query.rstrip(",")
-    query += " WHERE edu_id=%s"
-
-    values.append(edu_id)
-
-    cursor.execute(query, tuple(values))
-    connection.commit()
-
+    patch_education_record(
+        edu_id,
+        data
+    )
     return {
         "message": "Education updated successfully"
     }
-
 
 
 @router.delete("/{edu_id}")
@@ -243,40 +114,16 @@ def delete_education(
         edu_id: int,
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    cursor.execute(
-        """
-        SELECT *
-        FROM education
-        WHERE edu_id=%s
-        AND user_id=%s
-        """,
-        (edu_id, user_id)
+    get_education_by_id(
+        edu_id,
+        current_user[0]
     )
-
-    record = cursor.fetchone()
-
-    if not record:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized"
-        )
-
-    cursor.execute(
-        """
-        DELETE FROM education
-        WHERE edu_id=%s
-        """,
-        (edu_id,)
+    delete_education_record(
+        edu_id
     )
-
-    connection.commit()
-
     return {
         "message": "Education deleted successfully"
     }
-
 
 
 

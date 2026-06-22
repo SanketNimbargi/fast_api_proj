@@ -5,6 +5,20 @@ from schemas.personalDetail_schema import (
     UpdatePersonalDetails
 )
 from auth import verify_token, get_current_user
+from services.personal_details_service import (
+    create_personal_details_record,
+    get_personal_details_by_user,
+    get_personal_details_by_id,
+    replace_personal_details,
+    patch_personal_details,
+    delete_personal_details_record
+)
+from utils.personal_details_mapper import (
+    personal_details_to_dict
+)
+
+
+
 
 router = APIRouter(
     prefix="/personal-details",
@@ -18,55 +32,13 @@ def create_personal_details(
         details: PersonalDetails,
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    cursor.execute(
-        "SELECT * FROM personal_details WHERE user_id=%s",
-        (user_id,)
+    record_id = create_personal_details_record(
+        current_user[0],
+        details
     )
-
-    existing_record = cursor.fetchone()
-
-    if existing_record:
-        raise HTTPException(
-            status_code=400,
-            detail="Personal details already exist"
-        )
-
-    query = """
-    INSERT INTO personal_details
-    (
-        user_id,
-        father_name,
-        mother_name,
-        date_of_birth,
-        marital_status,
-        nationality,
-        blood_group,
-        emergency_contact,
-        alternate_email
-    )
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-    """
-
-    values = (
-        user_id,
-        details.father_name,
-        details.mother_name,
-        details.date_of_birth,
-        details.marital_status,
-        details.nationality,
-        details.blood_group,
-        details.emergency_contact,
-        details.alternate_email
-    )
-
-    cursor.execute(query, values)
-    connection.commit()
-
     return {
         "message": "Personal details added successfully",
-        "id": cursor.lastrowid
+        "id": record_id
     }
 
 
@@ -74,35 +46,10 @@ def create_personal_details(
 def get_personal_details(
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    query = """
-    SELECT *
-    FROM personal_details
-    WHERE user_id=%s
-    """
-
-    cursor.execute(query, (user_id,))
-    row = cursor.fetchone()
-
-    if not row:
-        raise HTTPException(
-            status_code=404,
-            detail="No personal details found"
-        )
-
-    return {
-        "id": row[0],
-        "user_id": row[1],
-        "father_name": row[2],
-        "mother_name": row[3],
-        "date_of_birth": row[4],
-        "marital_status": row[5],
-        "nationality": row[6],
-        "blood_group": row[7],
-        "emergency_contact": row[8],
-        "alternate_email": row[9]
-    }
+    row = get_personal_details_by_user(
+        current_user[0]
+    )
+    return personal_details_to_dict(row)
 
 
 @router.get("/{id}")
@@ -110,36 +57,11 @@ def get_personal_detail(
         id: int,
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    query = """
-    SELECT *
-    FROM personal_details
-    WHERE id=%s
-    AND user_id=%s
-    """
-
-    cursor.execute(query, (id, user_id))
-    row = cursor.fetchone()
-
-    if not row:
-        raise HTTPException(
-            status_code=404,
-            detail="Personal details not found"
-        )
-
-    return {
-        "id": row[0],
-        "user_id": row[1],
-        "father_name": row[2],
-        "mother_name": row[3],
-        "date_of_birth": row[4],
-        "marital_status": row[5],
-        "nationality": row[6],
-        "blood_group": row[7],
-        "emergency_contact": row[8],
-        "alternate_email": row[9]
-    }
+    row = get_personal_details_by_id(
+        id,
+        current_user[0]
+    )
+    return personal_details_to_dict(row)
 
 
 @router.put("/{id}")
@@ -148,58 +70,18 @@ def update_personal_details(
         personal: PersonalDetails,
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    cursor.execute(
-        """
-        SELECT *
-        FROM personal_details
-        WHERE id=%s
-        AND user_id=%s
-        """,
-        (id, user_id)
+    get_personal_details_by_id(
+        id,
+        current_user[0]
     )
-
-    record = cursor.fetchone()
-
-    if not record:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized"
-        )
-
-    query = """
-    UPDATE personal_details
-    SET
-        father_name=%s,
-        mother_name=%s,
-        date_of_birth=%s,
-        marital_status=%s,
-        nationality=%s,
-        blood_group=%s,
-        emergency_contact=%s,
-        alternate_email=%s
-    WHERE id=%s
-    """
-
-    values = (
-        personal.father_name,
-        personal.mother_name,
-        personal.date_of_birth,
-        personal.marital_status,
-        personal.nationality,
-        personal.blood_group,
-        personal.emergency_contact,
-        personal.alternate_email,
-        id
+    replace_personal_details(
+        id,
+        personal
     )
-
-    cursor.execute(query, values)
-    connection.commit()
-
     return {
         "message": "Personal details updated successfully"
     }
+    
 
 
 @router.patch("/{id}")
@@ -208,74 +90,21 @@ def patch_personal_details(
         personal: UpdatePersonalDetails,
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    cursor.execute(
-        """
-        SELECT *
-        FROM personal_details
-        WHERE id=%s
-        AND user_id=%s
-        """,
-        (id, user_id)
+    get_personal_details_by_id(
+        id,
+        current_user[0]
     )
-
-    record = cursor.fetchone()
-
-    if not record:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized"
-        )
-
-    query = "UPDATE personal_details SET "
-    values = []
-
-    if personal.father_name is not None:
-        query += "father_name=%s,"
-        values.append(personal.father_name)
-
-    if personal.mother_name is not None:
-        query += "mother_name=%s,"
-        values.append(personal.mother_name)
-
-    if personal.date_of_birth is not None:
-        query += "date_of_birth=%s,"
-        values.append(personal.date_of_birth)
-
-    if personal.marital_status is not None:
-        query += "marital_status=%s,"
-        values.append(personal.marital_status)
-
-    if personal.nationality is not None:
-        query += "nationality=%s,"
-        values.append(personal.nationality)
-
-    if personal.blood_group is not None:
-        query += "blood_group=%s,"
-        values.append(personal.blood_group)
-
-    if personal.emergency_contact is not None:
-        query += "emergency_contact=%s,"
-        values.append(personal.emergency_contact)
-
-    if personal.alternate_email is not None:
-        query += "alternate_email=%s,"
-        values.append(personal.alternate_email)
-
-    if len(values) == 0:
+    data = personal.model_dump(
+        exclude_none=True
+    )
+    if not data:
         return {
             "message": "No fields provided"
         }
-
-    query = query.rstrip(",")
-    query += " WHERE id=%s"
-
-    values.append(id)
-
-    cursor.execute(query, tuple(values))
-    connection.commit()
-
+    patch_personal_details(
+        id,
+        data
+    )
     return {
         "message": "Personal details updated successfully"
     }
@@ -286,39 +115,18 @@ def delete_personal_details(
         id: int,
         current_user=Depends(get_current_user)):
 
-    user_id = current_user[0]
-
-    cursor.execute(
-        """
-        SELECT *
-        FROM personal_details
-        WHERE id=%s
-        AND user_id=%s
-        """,
-        (id, user_id)
+    get_personal_details_by_id(
+        id,
+        current_user[0]
     )
-
-    record = cursor.fetchone()
-
-    if not record:
-        raise HTTPException(
-            status_code=403,
-            detail="Not authorized"
-        )
-
-    cursor.execute(
-        """
-        DELETE FROM personal_details
-        WHERE id=%s
-        """,
-        (id,)
+    delete_personal_details_record(
+        id
     )
-
-    connection.commit()
-
     return {
         "message": "Personal details deleted successfully"
     }
+
+
 
 
 
