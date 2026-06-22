@@ -1,4 +1,4 @@
-# FastAPI User Management System
+# FastAPI User Management API
 
 A FastAPI application implementing JWT Authentication, User Profile Management, Education Details, and Personal Details using a layered architecture.
 
